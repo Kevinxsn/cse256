@@ -63,13 +63,30 @@ class DAN(nn.Module):
         num_layers=2,
         dropout=0.3,
         frozen_embeddings=False,
+        use_glove = True,
+        emb_dim = None
     ):
         super().__init__()
         self.pad_idx = 0
 
-        # embedding layer initialized from pretrained vectors
-        self.embedding = word_embeddings.get_initialized_embedding_layer(frozen=frozen_embeddings)
-        emb_dim = word_embeddings.get_embedding_length()
+        if use_glove:
+            # pretrained init (your 1a)
+            self.embedding = word_embeddings.get_initialized_embedding_layer(
+                frozen=frozen_embeddings
+            )
+            emb_dim = word_embeddings.get_embedding_length()
+        else:
+            # 1b: random init
+            vocab_size = len(word_embeddings.word_indexer)
+            if emb_dim is None:
+                emb_dim = word_embeddings.get_embedding_length()  # match glove dim (50 or 300)
+            self.embedding = nn.Embedding(
+                num_embeddings=vocab_size,
+                embedding_dim=emb_dim,
+                padding_idx=self.pad_idx
+            )
+            # Embeddings should be trainable for 1b
+            self.embedding.weight.requires_grad = True
 
         self.dropout = nn.Dropout(dropout)
 
