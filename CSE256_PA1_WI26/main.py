@@ -11,6 +11,9 @@ import argparse
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from BOWmodels import SentimentDatasetBOW, NN2BOW, NN3BOW
+from sentiment_data import read_word_embeddings
+from DANmodels import SentimentDatasetDAN, DAN
+from torch.utils.data import DataLoader
 
 
 # Training function
@@ -145,8 +148,33 @@ def main():
         # plt.show()
 
     elif args.model == "DAN":
-        #TODO:  Train and evaluate your DAN
-        print("DAN model not implemented yet")
+            
+
+        # choose one:
+        # emb_path = "data/glove.6B.50d-relativized.txt"
+        emb_path = "data/glove.6B.300d-relativized.txt"
+
+        embs = read_word_embeddings(emb_path)
+
+        train_ds = SentimentDatasetDAN("data/train.txt", embs, max_len=60)
+        dev_ds   = SentimentDatasetDAN("data/dev.txt",   embs, max_len=60)
+
+        train_loader = DataLoader(train_ds, batch_size=64, shuffle=True)
+        dev_loader   = DataLoader(dev_ds,   batch_size=64, shuffle=False)
+
+        model = DAN(
+            word_embeddings=embs,
+            hidden_size=200,
+            num_layers=2,
+            dropout=0.3,
+            frozen_embeddings=False,   # try True vs False
+        )
+
+        # If your experiment() is hardcoded to lr=1e-4 and 100 epochs,
+        # consider bumping lr for DAN:
+        #   optimizer = Adam(..., lr=1e-3)
+        # Otherwise just call your existing experiment().
+        experiment(model, train_loader, dev_loader)
 
 if __name__ == "__main__":
     main()
