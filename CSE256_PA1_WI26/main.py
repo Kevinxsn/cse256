@@ -23,7 +23,11 @@ def train_epoch(data_loader, model, loss_fn, optimizer):
     model.train()
     train_loss, correct = 0, 0
     for batch, (X, y) in enumerate(data_loader):
-        X = X.float()
+        #X = X.float()
+        if X.dtype in (torch.int64, torch.int32, torch.long):
+            X = X.long()
+        else:
+            X = X.float()
 
         # Compute prediction error
         pred = model(X)
@@ -49,7 +53,11 @@ def eval_epoch(data_loader, model, loss_fn, optimizer):
     eval_loss = 0
     correct = 0
     for batch, (X, y) in enumerate(data_loader):
-        X = X.float()
+        #X = X.float()
+        if X.dtype in (torch.int64, torch.int32, torch.long):
+            X = X.long()
+        else:
+            X = X.float()
 
         # Compute prediction error
         pred = model(X)
@@ -87,6 +95,9 @@ def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Run model training based on specified model type')
     parser.add_argument('--model', type=str, required=True, help='Model type to train (e.g., BOW)')
+    parser.add_argument('--bpe_vocab', type=int, default=3000)
+    parser.add_argument('--bpe_emb_dim', type=int, default=300)
+    parser.add_argument('--bpe_max_len', type=int, default=10)
 
     # Parse the command-line arguments
     args = parser.parse_args()
@@ -151,8 +162,8 @@ def main():
             
 
         # choose one:
-        # emb_path = "data/glove.6B.50d-relativized.txt"
-        emb_path = "data/glove.6B.300d-relativized.txt"
+        emb_path = "data/glove.6B.50d-relativized.txt"
+        #emb_path = "data/glove.6B.300d-relativized.txt"
 
         embs = read_word_embeddings(emb_path)
 
@@ -172,8 +183,53 @@ def main():
 
         # If your experiment() is hardcoded to lr=1e-4 and 100 epochs,
         # consider bumping lr for DAN:
-        #   optimizer = Adam(..., lr=1e-3)
+        #   optimizer = Adam(..., lr=1e-3)""
         # Otherwise just call your existing experiment().
+        experiment(model, train_loader, dev_loader)
+    
+    
+    elif args.model == "BPE":
+        from bpe import BytePairEncoder
+        from utils import Indexer
+        from DANmodels import SentimentDatasetBPE, DANSubword
+
+        # 1) train BPE on train set words only
+        train_examples = read_sentiment_examples("data/train.txt")
+        all_train_words = [w for ex in train_examples for w in ex.words]
+
+        
+        print('bpe training begin')
+        bpe = BytePairEncoder()
+        bpe.train(all_train_words, vocab_size=args.bpe_vocab)
+        print('bpe training finished')
+
+        # 2) build subword vocabulary (Indexer) from train encodings only
+        subword_indexer = Indexer()
+        subword_indexer.add_and_get_index("PAD")  # 0
+        subword_indexer.add_and_get_index("UNK")  # 1
+
+        for ex in train_examples:
+            sws = bpe.encode_sentence(ex.words)
+            for sw in sws:
+                subword_indexer.add_and_get_index(sw)
+
+        # 3) datasets/loaders
+        train_ds = SentimentDatasetBPE("data/train.txt", bpe, subword_indexer, max_len=args.bpe_max_len)
+        dev_ds   = SentimentDatasetBPE("data/dev.txt",   bpe, subword_indexer, max_len=args.bpe_max_len)
+
+        train_loader = DataLoader(train_ds, batch_size=64, shuffle=True)
+        dev_loader   = DataLoader(dev_ds,   batch_size=64, shuffle=False)
+
+        # 4) model (random embeddings, per instructions)
+        model = DANSubword(
+            vocab_size=len(subword_indexer),
+            emb_dim=args.bpe_emb_dim,
+            hidden_size=200,
+            num_layers=2,
+            dropout=0.3,
+            pad_idx=0
+        )
+
         experiment(model, train_loader, dev_loader)
 
 if __name__ == "__main__":

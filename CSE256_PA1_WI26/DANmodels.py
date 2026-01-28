@@ -4,7 +4,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset
-
+from sentiment_data import read_sentiment_examples
+from utils import Indexer
 from sentiment_data import read_sentiment_examples  # same as BOWModels.py uses
 
 
@@ -42,6 +43,43 @@ class SentimentDatasetDAN(Dataset):
                 idxs = idxs[:self.max_len]
 
             self.x_data.append(torch.tensor(idxs, dtype=torch.long))
+            self.y_data.append(torch.tensor(ex.label, dtype=torch.long))
+
+    def __len__(self):
+        return len(self.x_data)
+
+    def __getitem__(self, i):
+        return self.x_data[i], self.y_data[i]
+    
+class SentimentDatasetBPE(Dataset):
+    """
+    Encodes each sentence into subword IDs using a trained BPE + subword Indexer.
+    Output x is LongTensor [max_len] (PAD=0, UNK=1).
+    """
+    def __init__(self, infile, bpe, subword_indexer: Indexer, max_len=120):
+        self.examples = read_sentiment_examples(infile)
+        self.bpe = bpe
+        self.indexer = subword_indexer
+        self.max_len = max_len
+        self.pad_idx = 0
+        self.unk_idx = 1
+
+        self.x_data, self.y_data = [], []
+        for ex in self.examples:
+            subwords = self.bpe.encode_sentence(ex.words)
+            ids = []
+            for sw in subwords:
+                idx = self.indexer.index_of(sw)
+                if idx == -1:
+                    idx = self.unk_idx
+                ids.append(idx)
+
+            if len(ids) < self.max_len:
+                ids += [self.pad_idx] * (self.max_len - len(ids))
+            else:
+                ids = ids[:self.max_len]
+
+            self.x_data.append(torch.tensor(ids, dtype=torch.long))
             self.y_data.append(torch.tensor(ex.label, dtype=torch.long))
 
     def __len__(self):
@@ -120,3 +158,38 @@ class DAN(nn.Module):
         h = self.mlp(avg)                                  # [B, hidden] or [B, D]
         logits = self.out(h)                               # [B, 2]
         return self.log_softmax(logits)
+    
+    
+    
+class DANSubword(nn.Module):
+    """
+    DAN for subword IDs:
+      ids -> random nn.Embedding -> masked average -> MLP -> log_softmax
+    """
+    def __init__(self, vocab_size, emb_dim=100, hidden_size=200, num_layers=2, dropout=0.3, pad_idx=0):
+        super().__init__()
+        self.pad_idx = pad_idx
+        self.embedding = nn.Embedding(vocab_size, emb_dim, padding_idx=pad_idx)
+
+        self.dropout = nn.Dropout(dropout)
+
+        layers = []
+        in_dim = emb_dim
+        for _ in range(num_layers - 1):
+            layers += [nn.Linear(in_dim, hidden_size), nn.ReLU(), nn.Dropout(dropout)]
+            in_dim = hidden_size
+        self.mlp = nn.Sequential(*layers) if layers else nn.Identity()
+
+        self.out = nn.Linear(in_dim, 2)
+        self.log_softmax = nn.LogSoftmax(dim=1)
+
+    def forward(self, x):
+        x = x.long()
+        emb = self.embedding(x)  # [B, L, D]
+
+        mask = (x != self.pad_idx).float()
+        lengths = mask.sum(dim=1).clamp(min=1.0)
+        avg = (emb * mask.unsqueeze(-1)).sum(dim=1) / lengths.unsqueeze(-1)
+
+        h = self.mlp(self.dropout(avg))
+        return self.log_softmax(self.out(h))
