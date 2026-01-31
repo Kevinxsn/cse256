@@ -98,7 +98,7 @@ class DAN(nn.Module):
         self,
         word_embeddings,
         hidden_size=200,
-        num_layers=2,
+        num_layers=3,
         dropout=0.3,
         frozen_embeddings=False,
         use_glove = True,
@@ -109,12 +109,14 @@ class DAN(nn.Module):
 
         if use_glove:
             # pretrained init (your 1a)
+            
             self.embedding = word_embeddings.get_initialized_embedding_layer(
                 frozen=frozen_embeddings
             )
             emb_dim = word_embeddings.get_embedding_length()
         else:
             # 1b: random init
+            print('initialize the embedding randomly')
             vocab_size = len(word_embeddings.word_indexer)
             if emb_dim is None:
                 emb_dim = word_embeddings.get_embedding_length()  # match glove dim (50 or 300)

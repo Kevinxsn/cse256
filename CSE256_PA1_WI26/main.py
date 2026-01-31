@@ -95,7 +95,7 @@ def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Run model training based on specified model type')
     parser.add_argument('--model', type=str, required=True, help='Model type to train (e.g., BOW)')
-    parser.add_argument('--bpe_vocab', type=int, default=3000)
+    parser.add_argument('--bpe_vocab', type=int, default=5000)
     parser.add_argument('--bpe_emb_dim', type=int, default=300)
     parser.add_argument('--bpe_max_len', type=int, default=10)
 
@@ -162,8 +162,10 @@ def main():
             
 
         # choose one:
-        emb_path = "data/glove.6B.50d-relativized.txt"
-        #emb_path = "data/glove.6B.300d-relativized.txt"
+        #emb_path = "data/glove.6B.50d-relativized.txt"
+        emb_path = "data/glove.6B.300d-relativized.txt"
+        
+        
 
         embs = read_word_embeddings(emb_path)
 
@@ -178,21 +180,19 @@ def main():
             hidden_size=200,
             num_layers=2,
             dropout=0.3,
-            frozen_embeddings=False,   # try True vs False
+            use_glove=False,
+            frozen_embeddings=True,   # try True vs False
         )
 
-        # If your experiment() is hardcoded to lr=1e-4 and 100 epochs,
-        # consider bumping lr for DAN:
-        #   optimizer = Adam(..., lr=1e-3)""
-        # Otherwise just call your existing experiment().
         experiment(model, train_loader, dev_loader)
     
     
-    elif args.model == "BPE":
+    elif args.model == "SUBWORDDAN":
         from bpe import BytePairEncoder
         from utils import Indexer
         from DANmodels import SentimentDatasetBPE, DANSubword
 
+        print(f'BPE, vocab size = {args.bpe_vocab}, the bpe emb dim is {args.bpe_emb_dim}, with max length {args.bpe_max_len}')
         # 1) train BPE on train set words only
         train_examples = read_sentiment_examples("data/train.txt")
         all_train_words = [w for ex in train_examples for w in ex.words]
