@@ -1,0 +1,1 @@
+python3 -c "import nltk; nltk.download('punkt_tab', download_dir='/projects/ps-renlab2/sux002/cse256/CSE256_PA2_WI26/PA2_code/data')"
